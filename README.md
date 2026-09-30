@@ -46,5 +46,6 @@ Four of those six fail with errors that do not point at the real cause. `granola
 
 - Nothing here gets around licensing or sign-in. You use your own account and the app talks to Granola's real servers. The only patch is a platform label that their API refuses to accept.
 - Granola's code belongs to Granola. Do not commit `app.asar` or the `.dmg`. The `.gitignore` covers both.
+- The browser extension bridge runs a `python3` relay each time the extension connects, so `python3` must stay installed after setup.
 - Running the script again is safe. It wipes and rebuilds the install folder and leaves your notes in `~/.config/Granola` alone.
 - `./uninstall.sh --purge` also removes the local notes cache and login.
