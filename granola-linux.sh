@@ -6,6 +6,7 @@ DMG="${1:-}"
 INSTALL_DIR="${INSTALL_DIR:-$HOME/Applications/granola}"
 CACHE_DIR="${CACHE_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/.cache}"
 DESKTOP_FILE="${DESKTOP_FILE:-$HOME/.local/share/applications/granola.desktop}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RES="Granola/Granola.app/Contents/Resources"
 
 die()  { printf '\033[31merror:\033[0m %s\n' "$*" >&2; exit 1; }
@@ -114,6 +115,54 @@ if total == 0:
 p.write_bytes(data)
 print(f"    rewrote {total} platform fallback(s)")
 PYEOF
+
+
+step "Installing the Chrome extension bridge"
+
+# The Granola Companion extension talks to the app through a native-messaging
+# host named com.granola.app. The app looks for the host binary at
+# app.asar/native/x64/meet-consent-host and only writes the browser manifest on
+# macOS and Windows, so append the relay to the asar and write the manifests here.
+HOST_SRC="$SCRIPT_DIR/native-host/meet-consent-host"
+[[ -f "$HOST_SRC" ]] || die "missing $HOST_SRC"
+mkdir -p "$INSTALL_DIR/resources/native-host"
+cp "$HOST_SRC" "$INSTALL_DIR/resources/native-host/meet-consent-host"
+chmod +x "$INSTALL_DIR/resources/native-host/meet-consent-host"
+
+python3 - "$INSTALL_DIR/resources/app.asar" "$HOST_SRC" <<'PYEOF'
+import sys, json, struct, hashlib, pathlib
+asar, host = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2]).read_bytes()
+b = asar.read_bytes()
+psize = struct.unpack('<I', b[4:8])[0]
+jlen = struct.unpack('<I', b[12:16])[0]
+hdr = json.loads(b[16:16 + jlen])
+content = b[8 + psize:]
+entry = {'size': len(host), 'executable': True, 'offset': str(len(content))}
+if any('integrity' in v for v in hdr['files'].values() if isinstance(v, dict)):
+    h = hashlib.sha256(host).hexdigest()
+    entry['integrity'] = {'algorithm': 'SHA256', 'hash': h, 'blockSize': 4194304, 'blocks': [h]}
+hdr['files']['native'] = {'files': {'x64': {'files': {'meet-consent-host': entry}}}}
+j = json.dumps(hdr, separators=(',', ':')).encode()
+j += b'\0' * ((4 - len(j) % 4) % 4)
+asar.write_bytes(struct.pack('<IIII', 4, len(j) + 8, len(j) + 4, len(j)) + j + content + host)
+print("    appended native/x64/meet-consent-host to app.asar")
+PYEOF
+
+EXT_IDS='"chrome-extension://fihphjchjdimokpleomddhnapnobdphn/","chrome-extension://ephifgbopdapgehlpnakaddgmmgcbmjp/","chrome-extension://opaadbjlebbbnmjjgdmdllingedoleml/"'
+for cfg in google-chrome chromium BraveSoftware/Brave-Browser microsoft-edge; do
+  [[ -d "$HOME/.config/$cfg" ]] || continue
+  mkdir -p "$HOME/.config/$cfg/NativeMessagingHosts"
+  cat > "$HOME/.config/$cfg/NativeMessagingHosts/com.granola.app.json" <<EOF
+{
+  "name": "com.granola.app",
+  "description": "Granola meeting notes - consent messaging",
+  "path": "$INSTALL_DIR/resources/native-host/meet-consent-host",
+  "type": "stdio",
+  "allowed_origins": [$EXT_IDS]
+}
+EOF
+  info "registered native host for $cfg"
+done
 
 
 step "Rebuilding better-sqlite3-multiple-ciphers for Linux"

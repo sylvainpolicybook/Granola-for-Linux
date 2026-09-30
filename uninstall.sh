@@ -10,6 +10,7 @@ DATA_DIR="$HOME/.config/Granola"
 echo "This will remove:"
 echo "  $INSTALL_DIR"
 echo "  $DESKTOP_FILE"
+echo "  Browser native-messaging manifests for com.granola.app"
 [[ "${1:-}" == "--purge" ]] && echo "  $DATA_DIR  (local notes cache and login)"
 read -rp "Continue? [y/N] " reply
 [[ "$reply" =~ ^[Yy]$ ]] || { echo "Cancelled."; exit 0; }
@@ -17,6 +18,9 @@ read -rp "Continue? [y/N] " reply
 pkill -f "^$INSTALL_DIR/electron" 2>/dev/null || true
 sleep 1
 rm -rf "$INSTALL_DIR" "$DESKTOP_FILE"
+for cfg in google-chrome chromium BraveSoftware/Brave-Browser microsoft-edge; do
+  rm -f "$HOME/.config/$cfg/NativeMessagingHosts/com.granola.app.json"
+done
 [[ "${1:-}" == "--purge" ]] && rm -rf "$DATA_DIR"
 
 command -v update-desktop-database >/dev/null && update-desktop-database "$(dirname "$DESKTOP_FILE")" 2>/dev/null || true
